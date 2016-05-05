@@ -7,8 +7,7 @@ The easy way:
 
 The hard way:
 	Run `pip install -r requirements.txt`
-	Open a Python shell
-	Run `import nltk`, then run `nltk.download()`.
-	Download WordNet from the Corpora tab, then the actual app should run.
+	You'll need libxml2 and libxlst development packages to use on Linux
+		apt-get install libxml2-dev libxlst1-dev
 
 You can start Celery by running the celery.sh file.

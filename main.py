@@ -2,10 +2,14 @@
 
 from flask import Flask, render_template, request, url_for, redirect
 from celery import Celery
-from nltk.corpus import wordnet as wn
-from wikimarkup import parse
+#from nltk.corpus import wordnet as wn
+#from wikimarkup import parse
 from time import sleep
-import wikipedia, random, json
+import json
+import re
+import urllib2
+import urllib
+import lxml.html
 
 app = Flask(__name__, static_url_path='')
 app.debug = True
@@ -22,25 +26,24 @@ def index():
 
 @app.route('/make', methods=['POST'])
 def make():
-	articleid = request.form["articleid"]
-	task = processarticle.delay(articleid)
+	webpageid = request.form["webpageid"]
+	task = processwebpage.delay(webpageid)
 	#return 'Job ID ' + task.id, 302, {'Location': url_for('progresspage', task_id = task.id)}
 #	return "Original: \n\n" + wp.content + "\n\nNew: \n\n" + content + "\n\nChanged words: " + str(replacecount) + "\n\nLog:\n" + output
 	return render_template('wait.html', taskid = task.id)
 
 @app.route('/result/<task_id>')
 def result(task_id):
-	task = processarticle.AsyncResult(task_id)
+	task = processwebpage.AsyncResult(task_id)
 	if task.state == 'SUCCESS':
-		content = task.result['article']
-		html = parse(content, False)
-		return render_template("result.html", content = content, html = html, info = task.result['info'])
+		links = task.result['links']
+		return render_template("result.html", links = links)
 	else:
 		return "Be more patient!"
 
 @app.route('/status/<task_id>')
 def progress(task_id):
-	task = processarticle.AsyncResult(task_id)
+	task = processwebpage.AsyncResult(task_id)
 	stat = ""
 	curr = 0
 	total = 100
@@ -52,46 +55,29 @@ def progress(task_id):
 		total = task.info['total']
 	elif task.state == 'SUCCESS':
 		stat = task.info['status']
-		return json.dumps({'progress': curr, 'status': stat, 'content': task.result['article'], 'info': task.result['info'], 'complete': 1})
+		return json.dumps({'progress': curr, 'status': stat, 'links': task.result['links'], 'complete': 1})
 	else:
 		stat = 'An error occurred.'
 	#return render_template("wait.html", status = stat, current = curr, total = total)
 	return json.dumps({'percent': curr, 'status': stat, 'total': total, 'complete': 0})
 
 @celery.task(bind=True)
-def processarticle(self, articleid):
-	self.update_state(state='PROCESSING', meta={'current': 5, 'total': 100, 'status': 'Downloading article...'})
-	wp = wikipedia.page(articleid)
-	content = wp.content
-	self.update_state(state='PROCESSING', meta={'current': 10, 'total': 100, 'status': 'Processing article...'})
-	words = content.split()
-	replacecount = 0
-	output = ""
-	for i in range(0,len(words)):
-		word = random.choice(words)
-		if len(wn.synsets(word)) >= 1 and checkword(word):
-			newword = wn.synsets(word)[0].lemma_names()[0]
-			if not checksyn(newword):
-				if len(wn.synsets(word)) >= 2:
-					newword = wn.synsets(word)[1].lemma_names()[0]
-					if not checksyn(newword):
-						i -= 2
-						continue
-				else:
-					i -= 2
-					continue
-			if newword == word:
-				i -= 2
-				continue
-			else:
-				content = content.replace(" " + word + " ", " " + newword + " ", 1)
-				output += "Replaced " + word + " with " + newword + "\n"
-				replacecount += 1
-		else:
-			i -= 2
-		self.update_state(state='PROCESSING', meta={'current': i/100, 'total': 100, 'status': 'Editing article...'})
-#		sleep(0.5)
-	return {'current': 100, 'total': 100, 'status': 'Processing complete!', 'article': content, 'info': output}
+def processwebpage(self, webpageid):
+	# webpageid (URL of the page to crawl)
+	# --> links fetch webpage download webpage to python as string get links out of it and list them
+	links = ""
+	webpage = urllib.urlopen('http://' + webpageid) 	
+	dom =  lxml.html.fromstring(webpage.read())
+
+	for link in dom.xpath('//a/@href'): # select the url in href for all links
+	    links += "\n" + link
+
+
+	self.update_state(state='PROCESSING', meta={'current': 5, 'total': 100, 'status': 'Downloading webpage...'})
+	# ---
+
+	# ---
+	return {'current': 100, 'total': 100, 'status': 'Processing complete!', 'links': links}
 	
 	
 
